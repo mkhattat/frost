@@ -15,7 +15,7 @@ import (
 
 	group "github.com/bytemare/crypto"
 
-	"github.com/bytemare/frost/internal"
+	"github.com/mkhattat/frost/internal"
 )
 
 // Signature represent a Schnorr signature.

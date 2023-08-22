@@ -20,8 +20,8 @@ import (
 	group "github.com/bytemare/crypto"
 	secretsharing "github.com/bytemare/secret-sharing"
 
-	"github.com/bytemare/frost"
-	"github.com/bytemare/frost/internal"
+	"github.com/mkhattat/frost"
+	"github.com/mkhattat/frost/internal"
 )
 
 func (v test) test(t *testing.T) {

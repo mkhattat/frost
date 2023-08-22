@@ -15,9 +15,9 @@ import (
 	"github.com/bytemare/hash"
 	secretsharing "github.com/bytemare/secret-sharing"
 
-	"github.com/bytemare/frost"
-	"github.com/bytemare/frost/internal"
-	"github.com/bytemare/frost/internal/schnorr"
+	"github.com/mkhattat/frost"
+	"github.com/mkhattat/frost/internal"
+	"github.com/mkhattat/frost/internal/schnorr"
 )
 
 var configurationTable = []frost.Configuration{

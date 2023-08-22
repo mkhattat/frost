@@ -12,8 +12,8 @@ import (
 	group "github.com/bytemare/crypto"
 	secretsharing "github.com/bytemare/secret-sharing"
 
-	"github.com/bytemare/frost/internal"
-	"github.com/bytemare/frost/internal/schnorr"
+	"github.com/mkhattat/frost/internal"
+	"github.com/mkhattat/frost/internal/schnorr"
 )
 
 // Aggregate allows the coordinator to produce the final signature given all signature shares.

@@ -9,14 +9,13 @@
 package frost_test
 
 import (
-	"math/big"
 	"testing"
 
 	group "github.com/bytemare/crypto"
 	secretsharing "github.com/bytemare/secret-sharing"
 
-	"github.com/bytemare/frost"
-	"github.com/bytemare/frost/dkg"
+	"github.com/mkhattat/frost"
+	"github.com/mkhattat/frost/dkg"
 )
 
 // testUnit holds a participant and its return and input values during the protocol.
@@ -31,11 +30,10 @@ type testUnit struct {
 }
 
 func idFromInt(t *testing.T, g group.Group, i int) *group.Scalar {
-	id := g.NewScalar()
-	if err := id.SetInt(big.NewInt(int64(i))); err != nil {
+	id, err := frost.IdFromInt(g, i)
+	if err != nil {
 		t.Fatal(err)
 	}
-
 	return id
 }
 
@@ -46,55 +44,9 @@ func dkgGenerateKeys(
 	conf *frost.Configuration,
 	maxSigners, threshold int,
 ) ([]*secretsharing.KeyShare, *group.Element) {
-	g := conf.Ciphersuite.Group
-
-	// Create participants.
-	participants := make([]*dkg.Participant, maxSigners)
-	for i := 0; i < maxSigners; i++ {
-		id := idFromInt(t, conf.Ciphersuite.Group, i+1)
-		participants[i] = dkg.NewParticipant(conf.Ciphersuite, id, maxSigners, threshold)
-	}
-
-	// Step 1 & 2.
-	r1Data := make([]*dkg.Round1Data, maxSigners)
-	for i, p := range participants {
-		r1Data[i] = p.Init()
-	}
-
-	// Step 3 & 4.
-	r2Data := make(map[string][]*dkg.Round2Data)
-	for _, p := range participants {
-		id := string(p.Identifier.Encode())
-		r2Data[id] = make([]*dkg.Round2Data, 0, maxSigners-1)
-	}
-
-	for _, p := range participants {
-		r2DataI, err := p.Continue(r1Data)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		for _, r2d := range r2DataI {
-			id := string(r2d.ReceiverIdentifier.Encode())
-			r2Data[id] = append(r2Data[id], r2d)
-		}
-	}
-
-	// Step 5.
-	secretShares := make([]*secretsharing.KeyShare, maxSigners)
-	groupPublicKey := g.NewElement()
-	for i, p := range participants {
-		id := string(p.Identifier.Encode())
-		secret, _, pk, err := p.Finalize(r1Data, r2Data[id])
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		secretShares[i] = &secretsharing.KeyShare{
-			Identifier: p.Identifier,
-			SecretKey:  secret,
-		}
-		groupPublicKey = pk
+	secretShares, groupPublicKey, err := frost.DkgGenerateKeys(conf, maxSigners, threshold)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	return secretShares, groupPublicKey

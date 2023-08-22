@@ -10,11 +10,21 @@
 package frost
 
 import (
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
+	"io/ioutil"
+	"math/big"
+	"os"
+
 	group "github.com/bytemare/crypto"
 	"github.com/bytemare/hash"
 	secretsharing "github.com/bytemare/secret-sharing"
 
-	"github.com/bytemare/frost/internal"
+	"github.com/mkhattat/frost/dkg"
+	"github.com/mkhattat/frost/internal"
+	"github.com/mkhattat/frost/internal/schnorr"
 )
 
 // Ciphersuite identifies the group and hash to use for FROST.
@@ -109,6 +119,18 @@ func (c Ciphersuite) Configuration() *Configuration {
 	}
 }
 
+type ParticipantList []*Participant
+
+func (p ParticipantList) Get(id *group.Scalar) *Participant {
+	for _, i := range p {
+		if i.ParticipantInfo.KeyShare.Identifier.Equal(id) == 1 {
+			return i
+		}
+	}
+
+	return nil
+}
+
 // Configuration holds long term configuration information.
 type Configuration struct {
 	GroupPublicKey *group.Element
@@ -190,4 +212,213 @@ func derivePublicPoint(g group.Group, coms secretsharing.Commitment, i *group.Sc
 func Verify(g group.Group, share *secretsharing.KeyShare, coms secretsharing.Commitment) bool {
 	pk := g.Base().Multiply(share.SecretKey)
 	return secretsharing.Verify(g, share.Identifier, pk, coms)
+}
+
+// GenerateSaveEd25519 generates and saves ed25519 keys to disk after
+// encoding into PEM format
+func GenerateSaveEd25519(keyName string, pub ed25519.PublicKey) error {
+
+	var (
+		err   error
+		b     []byte
+		block *pem.Block
+	)
+
+	if err != nil {
+		fmt.Printf("Generation error : %s", err)
+		os.Exit(1)
+	}
+
+	// public key
+	b, err = x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return err
+	}
+
+	block = &pem.Block{
+		Type: "CERTIFICATE",
+		// Type:  "PUBLIC KEY",
+		Bytes: b,
+	}
+
+	fileName := keyName + ".pub"
+	err = ioutil.WriteFile(fileName, pem.EncodeToMemory(block), 0644)
+	return err
+
+}
+
+func LoadPubKeyEd25519(name string) ed25519.PublicKey {
+	var pemString, _ = os.ReadFile(name + ".pub")
+	block, _ := pem.Decode(pemString)
+	parseResult, _ := x509.ParsePKIXPublicKey(block.Bytes)
+	key := parseResult.(ed25519.PublicKey)
+	return key
+}
+
+func LoadPubKeyFrost(name string) *group.Element {
+	pb, _ := os.ReadFile("mykey.o.pub")
+	configuration := Ed25519.Configuration()
+	groupPublicKey := configuration.Ciphersuite.Group.NewElement()
+	groupPublicKey.UnmarshalBinary(pb)
+	return groupPublicKey
+}
+
+func IdFromInt(g group.Group, i int) (*group.Scalar, error) {
+	id := g.NewScalar()
+	if err := id.SetInt(big.NewInt(int64(i))); err != nil {
+		return nil, err
+	}
+
+	return id, nil
+}
+
+// dkgGenerateKeys generates sharded keys for maxSigner participant without a trusted dealer, and returns these shares
+// and the group's public key.
+func DkgGenerateKeys(
+	conf *Configuration,
+	maxSigners, threshold int,
+) ([]*secretsharing.KeyShare, *group.Element, error) {
+	g := conf.Ciphersuite.Group
+
+	// Create participants.
+	participants := make([]*dkg.Participant, maxSigners)
+	for i := 0; i < maxSigners; i++ {
+		id, err := IdFromInt(conf.Ciphersuite.Group, i+1)
+		if err != nil {
+			return nil, nil, err
+		}
+		participants[i] = dkg.NewParticipant(conf.Ciphersuite, id, maxSigners, threshold)
+	}
+
+	// Step 1 & 2.
+	r1Data := make([]*dkg.Round1Data, maxSigners)
+	for i, p := range participants {
+		r1Data[i] = p.Init()
+	}
+
+	// Step 3 & 4.
+	r2Data := make(map[string][]*dkg.Round2Data)
+	for _, p := range participants {
+		id := string(p.Identifier.Encode())
+		r2Data[id] = make([]*dkg.Round2Data, 0, maxSigners-1)
+	}
+
+	for _, p := range participants {
+		r2DataI, err := p.Continue(r1Data)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		for _, r2d := range r2DataI {
+			id := string(r2d.ReceiverIdentifier.Encode())
+			r2Data[id] = append(r2Data[id], r2d)
+		}
+	}
+
+	// Step 5.
+	secretShares := make([]*secretsharing.KeyShare, maxSigners)
+	groupPublicKey := g.NewElement()
+	for i, p := range participants {
+		id := string(p.Identifier.Encode())
+		secret, _, pk, err := p.Finalize(r1Data, r2Data[id])
+		if err != nil {
+			return nil, nil, err
+		}
+
+		secretShares[i] = &secretsharing.KeyShare{
+			Identifier: p.Identifier,
+			SecretKey:  secret,
+		}
+		// sb := secret.Encode()
+		groupPublicKey = pk
+	}
+
+	return secretShares, groupPublicKey, nil
+}
+
+func Sign(configuration *Configuration, privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element) {
+	println(">>>>RUN_FROST<<<<")
+	max := 3
+	threshold := 2
+	participantListInt := []int{1, 2}
+	message := []byte("test")
+
+	configuration.GroupPublicKey = groupPublicKey
+	g := configuration.Ciphersuite.Group
+
+	// Create Participants
+	participants := make(ParticipantList, max)
+	for i, share := range privateKeyShares {
+		participants[i] = &Participant{
+			Configuration:   *configuration,
+			ParticipantInfo: ParticipantInfo{KeyShare: share},
+		}
+	}
+
+	signatureAggregator := &Participant{
+		Configuration: *configuration,
+	}
+
+	// Round One: Commitment
+	participantList := make([]*group.Scalar, len(participantListInt))
+	for i, p := range participantListInt {
+		participantList[i] = internal.IntegerToScalar(g, p)
+	}
+
+	comList := make(internal.CommitmentList, len(participantList))
+	for i, id := range participantList {
+		p := participants.Get(id)
+		comList[i] = p.Commit()
+	}
+
+	comList.Sort()
+	_, _ = comList.ComputeBindingFactors(configuration.Ciphersuite, message)
+
+	// Round Two: Sign
+	sigShares := make([]*group.Scalar, len(participantList))
+	for i, id := range participantList {
+		p := participants.Get(id)
+
+		sigShare, err := p.Sign(message, comList)
+		if err != nil {
+			println("t.FATAL", err)
+		}
+
+		sigShares[i] = sigShare
+	}
+
+	// Final step: aggregate
+	aggregateSig := signatureAggregator.Aggregate(comList, message, sigShares)
+
+	// Sanity Check
+	groupSecretKey, err := secretsharing.Combine(g, uint(threshold), privateKeyShares)
+	if err != nil {
+		println("t.FATAL", err)
+	}
+
+	singleSig := schnorr.Sign(configuration.Ciphersuite, message, groupSecretKey)
+	// fmt.Printf("aggregateSig %v\n", aggregateSig.Encode())
+	// fmt.Printf("singleSig %v\n", singleSig.Encode())
+
+	mypubkey := LoadPubKeyEd25519("mykey")
+
+	res := ed25519.Verify(groupPublicKey.Encode(), message, aggregateSig.Encode())
+	res2 := ed25519.Verify(mypubkey, message, aggregateSig.Encode())
+	println(">>>>ed25519.Verify", res, res2)
+
+	if !schnorr.Verify(configuration.Ciphersuite, message, singleSig, groupPublicKey) {
+		println(">>>>>schnorr.Verify=false")
+		println("t2.FATAL")
+	}
+
+}
+
+func FrostKeyGen(maxSigners, threshold int) ([]*secretsharing.KeyShare, *group.Element, error) {
+	conf := Ed25519.Configuration()
+	return DkgGenerateKeys(conf, maxSigners, threshold)
+}
+
+func FrostSign(privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element) {
+	conf := Ed25519.Configuration()
+	Sign(conf, privateKeyShares, groupPublicKey)
 }

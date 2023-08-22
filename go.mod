@@ -1,4 +1,4 @@
-module github.com/bytemare/frost
+module github.com/mkhattat/frost
 
 go 1.20
 
