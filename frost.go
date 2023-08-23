@@ -336,12 +336,10 @@ func DkgGenerateKeys(
 	return secretShares, groupPublicKey, nil
 }
 
-func Sign(configuration *Configuration, privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element) {
-	println(">>>>RUN_FROST<<<<")
+func Sign(configuration *Configuration, privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element, message []byte) {
 	max := 3
 	threshold := 2
 	participantListInt := []int{1, 2}
-	message := []byte("test")
 
 	configuration.GroupPublicKey = groupPublicKey
 	g := configuration.Ciphersuite.Group
@@ -418,7 +416,7 @@ func FrostKeyGen(maxSigners, threshold int) ([]*secretsharing.KeyShare, *group.E
 	return DkgGenerateKeys(conf, maxSigners, threshold)
 }
 
-func FrostSign(privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element) {
+func FrostSign(privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element, message []byte) {
 	conf := Ed25519.Configuration()
-	Sign(conf, privateKeyShares, groupPublicKey)
+	Sign(conf, privateKeyShares, groupPublicKey, message)
 }
