@@ -391,10 +391,9 @@ func Sign(configuration *Configuration, privateKeyShares []*secretsharing.KeySha
 
 }
 
-func FrostVerify(groupPublicKey []byte, message []byte, signature []byte) {
+func FrostVerify(groupPublicKey []byte, message []byte, signature []byte) bool {
 	res := ed25519.Verify(groupPublicKey, message, signature)
-	println(">>>>ed25519.Verify", res)
-
+	return res
 }
 
 func FrostKeyGen(maxSigners, threshold int) ([]*secretsharing.KeyShare, *group.Element, error) {
@@ -402,7 +401,7 @@ func FrostKeyGen(maxSigners, threshold int) ([]*secretsharing.KeyShare, *group.E
 	return DkgGenerateKeys(conf, maxSigners, threshold)
 }
 
-func FrostSign(privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element, message []byte) {
+func FrostSign(privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element, message []byte) []byte {
 	conf := Ed25519.Configuration()
-	Sign(conf, privateKeyShares, groupPublicKey, message)
+	return Sign(conf, privateKeyShares, groupPublicKey, message)
 }
