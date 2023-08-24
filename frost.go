@@ -24,7 +24,6 @@ import (
 
 	"github.com/mkhattat/frost/dkg"
 	"github.com/mkhattat/frost/internal"
-	"github.com/mkhattat/frost/internal/schnorr"
 )
 
 // Ciphersuite identifies the group and hash to use for FROST.
@@ -336,9 +335,9 @@ func DkgGenerateKeys(
 	return secretShares, groupPublicKey, nil
 }
 
-func Sign(configuration *Configuration, privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element, message []byte) {
+func Sign(configuration *Configuration, privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element, message []byte) []byte {
 	max := 3
-	threshold := 2
+	// threshold := 2
 	participantListInt := []int{1, 2}
 
 	configuration.GroupPublicKey = groupPublicKey
@@ -388,26 +387,13 @@ func Sign(configuration *Configuration, privateKeyShares []*secretsharing.KeySha
 	// Final step: aggregate
 	aggregateSig := signatureAggregator.Aggregate(comList, message, sigShares)
 
-	// Sanity Check
-	groupSecretKey, err := secretsharing.Combine(g, uint(threshold), privateKeyShares)
-	if err != nil {
-		println("t.FATAL", err)
-	}
+	return aggregateSig.Encode()
 
-	singleSig := schnorr.Sign(configuration.Ciphersuite, message, groupSecretKey)
-	// fmt.Printf("aggregateSig %v\n", aggregateSig.Encode())
-	// fmt.Printf("singleSig %v\n", singleSig.Encode())
+}
 
-	mypubkey := LoadPubKeyEd25519("mykey")
-
-	res := ed25519.Verify(groupPublicKey.Encode(), message, aggregateSig.Encode())
-	res2 := ed25519.Verify(mypubkey, message, aggregateSig.Encode())
-	println(">>>>ed25519.Verify", res, res2)
-
-	if !schnorr.Verify(configuration.Ciphersuite, message, singleSig, groupPublicKey) {
-		println(">>>>>schnorr.Verify=false")
-		println("t2.FATAL")
-	}
+func FrostVerify(groupPublicKey []byte, message []byte, signature []byte) {
+	res := ed25519.Verify(groupPublicKey, message, signature)
+	println(">>>>ed25519.Verify", res)
 
 }
 
