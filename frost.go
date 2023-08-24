@@ -401,7 +401,6 @@ func FrostKeyGen(maxSigners, threshold int) ([]*secretsharing.KeyShare, *group.E
 	return DkgGenerateKeys(conf, maxSigners, threshold)
 }
 
-func FrostSign(privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element, message []byte) []byte {
-	conf := Ed25519.Configuration()
+func FrostSign(conf *Configuration, privateKeyShares []*secretsharing.KeyShare, groupPublicKey *group.Element, message []byte) []byte {
 	return Sign(conf, privateKeyShares, groupPublicKey, message)
 }
