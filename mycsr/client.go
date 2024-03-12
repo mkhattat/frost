@@ -2,8 +2,8 @@ package mycsr
 
 import (
 	"crypto"
-	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -169,8 +169,9 @@ func (c *Client) Init() error {
 func (c *Client) handleX509Enroll(req *api.EnrollmentRequest) (*EnrollmentResponse, error) {
 	// Generate the CSR
 	log.Info(">>>>handleX509Enroll")
-	csrPEM, key, err := c.GenCSR(req.CSR, req.Name)
-	fmt.Printf("csrPEM: %+v\nkey: %+v\n", csrPEM, key)
+	csrPEM, err := c.GenCSR(req.CSR, req.Name)
+	err = ioutil.WriteFile("mycsr.csr", csrPEM, 0644)
+	fmt.Printf("csrPEM: %+v\n", csrPEM)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failure generating CSR")
 	}
@@ -247,30 +248,31 @@ func curveIDFromConfig(idemixCurveName string) (idemix2.CurveID, error) {
 }
 
 // GenCSR generates a CSR (Certificate Signing Request)
-func (c *Client) GenCSR(req *api.CSRInfo, id string) ([]byte, bccsp.Key, error) {
+func (c *Client) GenCSR(req *api.CSRInfo, id string) ([]byte, error) {
 	log.Info("GenCSR %+v %+v", req, req.KeyRequest)
 
 	err := c.Init()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	cr := c.newCertificateRequest(req, id)
 
 	fmt.Printf(">>>>>>CR %+v\n", cr)
-	cspSigner, key, err := c.generateCSPSigner(cr, nil)
+	cspSigner, err := c.generateCSPSigner(cr)
 	if err != nil {
 		log.Info(">>>>cspSigner failed: ", err)
-		return nil, nil, err
+		return nil, err
 	}
 
+	println(">>>>>>generating csrPEM")
 	csrPEM, err := csr.Generate(cspSigner, cr)
 	if err != nil {
 		log.Debugf("failed generating CSR: %s", err)
-		return nil, nil, err
+		return nil, err
 	}
 
-	return csrPEM, key, nil
+	return csrPEM, nil
 }
 
 // newCertificateRequest creates a certificate request which is used to generate
@@ -310,23 +312,23 @@ func newCfsslKeyRequest(bkr *api.KeyRequest) *csr.KeyRequest {
 
 // generateCSPSigner generates a crypto.Signer for a given certificate request.
 // If a key is not provided, a new one will be generated.
-func (c *Client) generateCSPSigner(cr *csr.CertificateRequest, key bccsp.Key) (crypto.Signer, bccsp.Key, error) {
-	if key == nil {
-		// generate new key
-		key, cspSigner, err := util.BCCSPKeyRequestGenerate(cr, c.csp)
-		if err != nil {
-			log.Debugf("failed generating BCCSP key: %s", err)
-			return nil, nil, err
-		}
-		return cspSigner, key, nil
-	}
+func (c *Client) generateCSPSigner(cr *csr.CertificateRequest) (crypto.Signer, error) {
+	// if key == nil {
+	// 	// generate new key
+	// 	key, cspSigner, err := util.BCCSPKeyRequestGenerate(cr, c.csp)
+	// 	if err != nil {
+	// 		log.Info("failed generating BCCSP key: %s", err)
+	// 		return nil, nil, err
+	// 	}
+	// 	return cspSigner, key, nil
+	// }
 
 	// use existing key
-	log.Debugf("generating signer with existing key: %s", hex.EncodeToString(key.SKI()))
-	cspSigner, err := NewSigner(c.csp, key)
+	log.Info(">>>>generating signer without private key")
+	cspSigner, err := NewSigner(c.csp, c.Config)
 	if err != nil {
-		return nil, nil, errors.WithMessage(err, "Failed initializing CryptoSigner")
+		return nil, errors.WithMessage(err, "Failed initializing CryptoSigner")
 	}
 
-	return cspSigner, key, nil
+	return cspSigner, nil
 }

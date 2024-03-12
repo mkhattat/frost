@@ -1,12 +1,16 @@
 package mycsr
 
 import (
+	"crypto"
+	"crypto/ed25519"
 	"fmt"
 	"net/url"
 
+	secretsharing "github.com/bytemare/secret-sharing"
 	"github.com/hyperledger/fabric-ca/api"
 	"github.com/hyperledger/fabric-ca/lib/tls"
 	"github.com/hyperledger/fabric/bccsp/factory"
+	"github.com/mkhattat/frost"
 	"github.com/pkg/errors"
 )
 
@@ -25,6 +29,8 @@ type ClientConfig struct {
 	Debug      bool                 `opt:"d" help:"Enable debug level logging" hide:"true"`
 	LogLevel   string               `help:"Set logging level (info, warning, debug, error, fatal, critical)"`
 	Idemix     api.Idemix
+	PK         crypto.PublicKey
+	KeyShares  []*secretsharing.KeyShare
 }
 
 // Enroll a client given the server's URL and the client's home directory.
@@ -56,5 +62,11 @@ func (c *ClientConfig) Enroll(rawurl, home string) (*EnrollmentResponse, error) 
 	c.Enrollment.CSR = &c.CSR
 	client := &Client{HomeDir: home, Config: c}
 	return client.Enroll(&c.Enrollment)
+}
 
+func (c *ClientConfig) FrostSign(message []byte) []byte {
+	conf := frost.Ed25519.Configuration()
+	groupPublicKey := conf.Ciphersuite.Group.NewElement()
+	groupPublicKey.UnmarshalBinary(c.PK.(ed25519.PublicKey))
+	return frost.Sign(conf, c.KeyShares, groupPublicKey, message)
 }

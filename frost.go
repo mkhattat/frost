@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"strconv"
 
 	group "github.com/bytemare/crypto"
 	"github.com/bytemare/hash"
@@ -213,6 +214,37 @@ func Verify(g group.Group, share *secretsharing.KeyShare, coms secretsharing.Com
 	return secretsharing.Verify(g, share.Identifier, pk, coms)
 }
 
+func SaveSecretShares(configuration *Configuration, privateKeyShares []*secretsharing.KeyShare) {
+	for i, sk_share := range privateKeyShares {
+		f, _ := os.OpenFile("mykey"+strconv.Itoa(i), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		defer f.Close()
+		sk_marshal, _ := sk_share.SecretKey.MarshalBinary()
+		fmt.Printf(">>>>secret key %v\n", sk_marshal)
+		new_key := configuration.Ciphersuite.Group.NewScalar()
+		new_key.UnmarshalBinary(sk_marshal)
+		sk_share.SecretKey.Set(new_key)
+		id, _ := sk_share.Identifier.MarshalBinary()
+		fmt.Printf(">>>>>>>id: %v\n", id)
+		f.Write(id)
+		f.Write(sk_marshal)
+	}
+}
+
+func LoadSecretShare(keyname string, configuration *Configuration) *secretsharing.KeyShare {
+	b, _ := os.ReadFile(keyname)
+	new_key := configuration.Ciphersuite.Group.NewScalar()
+
+	new_key.UnmarshalBinary(b[32:])
+	new_id := configuration.Ciphersuite.Group.NewScalar()
+	new_id.UnmarshalBinary(b[0:32])
+
+	return &secretsharing.KeyShare{
+		Identifier: new_id,
+		SecretKey:  new_key,
+	}
+
+}
+
 // GenerateSaveEd25519 generates and saves ed25519 keys to disk after
 // encoding into PEM format
 func GenerateSaveEd25519(keyName string, pub ed25519.PublicKey) error {
@@ -244,6 +276,25 @@ func GenerateSaveEd25519(keyName string, pub ed25519.PublicKey) error {
 	err = ioutil.WriteFile(fileName, pem.EncodeToMemory(block), 0644)
 	return err
 
+}
+
+func ToEd25519(pk ed25519.PublicKey) (ed25519.PublicKey, error) {
+	// public key
+	b, err := x509.MarshalPKIXPublicKey(pk)
+	if err != nil {
+		return nil, err
+	}
+
+	block := &pem.Block{
+		Type: "CERTIFICATE",
+		// Type:  "PUBLIC KEY",
+		Bytes: b,
+	}
+
+	parseResult, _ := x509.ParsePKIXPublicKey(block.Bytes)
+	key := parseResult.(ed25519.PublicKey)
+
+	return key, nil
 }
 
 func LoadPubKeyEd25519(name string) ed25519.PublicKey {
